@@ -118,10 +118,19 @@ async function startServer() {
   const historyFilePath = path.join(__dirname, 'solver-history.json');
   let sharedHistory: Array<{ id: string; user: string; result: string; timestamp: number }> = [];
 
+  function pruneHistory(list: any[]) {
+    if (!Array.isArray(list)) return [];
+    const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+    return list
+      .filter(item => item && (item.timestamp || 0) >= oneDayAgo)
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+      .slice(0, 50);
+  }
+
   try {
     if (fs.existsSync(historyFilePath)) {
       const data = fs.readFileSync(historyFilePath, 'utf-8');
-      sharedHistory = JSON.parse(data);
+      sharedHistory = pruneHistory(JSON.parse(data));
     }
   } catch (e) {
     console.warn('Could not load solver-history.json:', e);
@@ -129,13 +138,15 @@ async function startServer() {
 
   function saveHistoryToFile() {
     try {
-      fs.writeFileSync(historyFilePath, JSON.stringify(sharedHistory.slice(0, 500)), 'utf-8');
+      sharedHistory = pruneHistory(sharedHistory);
+      fs.writeFileSync(historyFilePath, JSON.stringify(sharedHistory), 'utf-8');
     } catch (e) {
       console.warn('Could not write solver-history.json:', e);
     }
   }
 
   app.get('/api/history', (_req, res) => {
+    sharedHistory = pruneHistory(sharedHistory);
     res.json({ history: sharedHistory });
   });
 
@@ -163,9 +174,8 @@ async function startServer() {
         }
       }
 
+      sharedHistory = pruneHistory(sharedHistory);
       if (modified) {
-        sharedHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        if (sharedHistory.length > 500) sharedHistory = sharedHistory.slice(0, 500);
         saveHistoryToFile();
       }
 

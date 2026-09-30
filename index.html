@@ -989,7 +989,11 @@
                 <span style="font-size:12px; color:var(--text-secondary)">Active User:</span>
                 <span id="history-active-user-badge" style="font-size:13px; font-weight:700; color:var(--accent)">Anonymous</span>
             </div>
-            <div style="font-size:12px; color:var(--text-secondary)">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:11px; padding:3px 7px; border-radius:4px; background:rgba(255,255,255,0.06); color:#aaa; display:flex; align-items:center; gap:4px;" title="Solves automatically clear after 24 hours and are capped at 50 to prevent database bloat">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    24h Auto-Clear (Max 50)
+                </span>
                 <span id="history-count" style="color:#fff; font-weight:700">0 solves</span>
             </div>
         </div>
@@ -1442,6 +1446,20 @@
             </div>
 
             <div id="duplicates-list" style="padding:16px 20px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:12px;"></div>
+        </div>
+    </div>
+
+    <!-- History Crop Zoom Modal -->
+    <div id="crop-zoom-modal" style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.88); z-index:3600; display:none; align-items:center; justify-content:center; padding:16px; backdrop-filter:blur(6px);" onclick="if(event.target === this) closeCropZoomModal()">
+        <div style="background:#1c1c1f; border:1px solid rgba(255,255,255,0.15); box-shadow:0 12px 35px rgba(0,0,0,0.85); border-radius:16px; max-width:320px; width:100%; text-align:center; padding:20px; color:#fff;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <div style="font-weight:700; font-size:14px; color:var(--accent);" id="crop-zoom-title">Crop Preview</div>
+                <button type="button" class="btn btn-secondary" style="width:28px; height:28px; border-radius:50%; padding:0; display:flex; align-items:center; justify-content:center; margin:0;" onclick="closeCropZoomModal()">✕</button>
+            </div>
+            <div style="display:flex; justify-content:center; align-items:center; padding:10px 0;">
+                <img id="crop-zoom-img" src="" alt="Zoomed Crop" style="width:130px; height:130px; border-radius:50%; border:3px solid var(--accent); object-fit:cover; background:#000; box-shadow:0 6px 20px rgba(0,0,0,0.6);" />
+            </div>
+            <div id="crop-zoom-desc" style="font-size:12px; color:var(--text-secondary); margin-top:10px; line-height:1.4;"></div>
         </div>
     </div>
 
@@ -2084,19 +2102,58 @@
                         id: id,
                         user: item.user || 'Unknown',
                         result: item.result || '---',
-                        timestamp: item.timestamp || Date.now()
+                        timestamp: item.timestamp || Date.now(),
+                        targets: Array.isArray(item.targets) ? item.targets : [],
+                        answers: Array.isArray(item.answers) ? item.answers : []
                     });
                     changed = true;
                 }
             });
 
             if (changed) {
-                solverHistory = Array.from(map.values());
-                solverHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-                if (solverHistory.length > 300) solverHistory = solverHistory.slice(0, 300);
+                solverHistory = pruneSolverHistory(Array.from(map.values()));
                 renderSolverHistory();
             }
             return changed;
+        }
+
+        // Automatically prune solver history to keep only records under 24 hours old, capped at 50
+        function pruneSolverHistory(list) {
+            if (!Array.isArray(list)) return [];
+            const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+            let filtered = list.filter(item => item && (item.timestamp || 0) >= oneDayAgo);
+            filtered.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            if (filtered.length > 50) {
+                filtered = filtered.slice(0, 50);
+            }
+            return filtered;
+        }
+
+        // Compress circle crop image for history storage (keeps storage lightweight, ~500 bytes per crop)
+        async function compressCircleCrop(dataUrl, size = 56) {
+            if (!dataUrl) return null;
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = size;
+                    canvas.height = size;
+                    const ctx = canvas.getContext('2d');
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(img, 0, 0, size, size);
+                    try {
+                        const webp = canvas.toDataURL('image/webp', 0.72);
+                        if (webp && webp.startsWith('data:image/webp')) {
+                            resolve(webp);
+                            return;
+                        }
+                    } catch (e) {}
+                    resolve(canvas.toDataURL('image/jpeg', 0.65));
+                };
+                img.onerror = () => resolve(null);
+                img.src = dataUrl;
+            });
         }
 
         async function fetchSharedHistoryFromServer() {
@@ -2131,26 +2188,28 @@
             }
         }
 
-        async function recordSolverHistory(resultDigits) {
+        async function recordSolverHistory(resultDigits, targetCrops = [], answerCrops = []) {
             if (!resultDigits || resultDigits === "000") return;
             const currentUser = getSolverUserName();
             const entry = {
                 id: 'hist_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
                 user: currentUser,
                 result: String(resultDigits),
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                targets: Array.isArray(targetCrops) ? targetCrops : [],
+                answers: Array.isArray(answerCrops) ? answerCrops : []
             };
 
             // Prepend to solver history
             solverHistory.unshift(entry);
-            if (solverHistory.length > 300) solverHistory = solverHistory.slice(0, 300);
+            solverHistory = pruneSolverHistory(solverHistory);
             renderSolverHistory();
 
             // 1. Save directly to Firebase Firestore
             if (db) {
                 try {
                     await db.collection('config').doc('appSettings').set({
-                        solverHistory: solverHistory.slice(0, 250)
+                        solverHistory: solverHistory
                     }, { merge: true });
                 } catch (e) {
                     console.warn("Could not save solver history to Firebase:", e?.message || e);
@@ -2325,30 +2384,121 @@
                 const safeUser = escapeHtml(item.user || 'Anonymous');
                 const safeResult = escapeHtml(item.result || '---');
                 const safeId = escapeHtml(item.id || '');
+                const hasTargets = Array.isArray(item.targets) && item.targets.length > 0;
+                const hasAnswers = Array.isArray(item.answers) && item.answers.length > 0;
+                const hasCrops = hasTargets || hasAnswers;
+
+                let targetsHtml = '';
+                if (hasTargets) {
+                    targetsHtml = item.targets.map((src, idx) => {
+                        const tNum = idx + 1;
+                        const ansDigit = (safeResult && safeResult.length >= tNum) ? safeResult.charAt(idx) : '';
+                        const ansLabel = ansDigit ? `→ A${ansDigit}` : '';
+                        return `
+                            <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+                                <div style="position:relative; width:44px; height:44px; cursor:pointer;" onclick="openCropZoomModal('${src}', 'Target ${tNum} (T${tNum})', 'Solver matched to Answer choice A${ansDigit || '?'}')" title="Click to enlarge Target ${tNum}">
+                                    <img src="${src}" alt="T${tNum}" style="width:44px; height:44px; border-radius:50%; object-fit:cover; border:2px solid var(--accent); background:#000; box-shadow:0 2px 6px rgba(0,0,0,0.4);" />
+                                    <span style="position:absolute; bottom:-3px; right:-3px; font-size:9px; font-weight:bold; background:#1e1e1e; color:var(--accent); border:1px solid var(--accent); border-radius:10px; padding:0 4px; line-height:13px;">T${tNum}</span>
+                                </div>
+                                <span style="font-size:10px; font-weight:700; color:var(--success); font-family:monospace;">${ansLabel || '&nbsp;'}</span>
+                            </div>`;
+                    }).join('');
+                }
+
+                let answersHtml = '';
+                if (hasAnswers) {
+                    answersHtml = item.answers.map((src, idx) => {
+                        const aNum = idx + 1;
+                        const matchedTargets = [];
+                        if (safeResult) {
+                            if (safeResult.charAt(0) === String(aNum)) matchedTargets.push('T1');
+                            if (safeResult.charAt(1) === String(aNum)) matchedTargets.push('T2');
+                            if (safeResult.charAt(2) === String(aNum)) matchedTargets.push('T3');
+                        }
+                        const isChosen = matchedTargets.length > 0;
+                        const borderStyle = isChosen ? '2px solid #03dac6' : '1px solid #444';
+                        const badgeBg = isChosen ? 'var(--success)' : '#2a2a2a';
+                        const badgeColor = isChosen ? '#000' : '#888';
+                        const matchDesc = isChosen ? `Chosen by solver as match for ${matchedTargets.join(', ')}` : 'Not selected by solver';
+
+                        return `
+                            <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+                                <div style="position:relative; width:44px; height:44px; cursor:pointer;" onclick="openCropZoomModal('${src}', 'Answer Choice ${aNum} (A${aNum})', '${matchDesc}')" title="Click to enlarge Answer ${aNum}">
+                                    <img src="${src}" alt="A${aNum}" style="width:44px; height:44px; border-radius:50%; object-fit:cover; border:${borderStyle}; background:#000; opacity:${isChosen ? '1' : '0.6'}; box-shadow:0 2px 6px rgba(0,0,0,0.4);" />
+                                    <span style="position:absolute; bottom:-3px; right:-3px; font-size:9px; font-weight:bold; background:${badgeBg}; color:${badgeColor}; border-radius:10px; padding:0 4px; line-height:13px;">A${aNum}</span>
+                                </div>
+                                <span style="font-size:10px; font-weight:700; color:${isChosen ? '#03dac6' : '#555'}; font-family:monospace;">
+                                    ${isChosen ? matchedTargets.join(',') : '—'}
+                                </span>
+                            </div>`;
+                    }).join('');
+                }
 
                 return `
-                    <div class="card" style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; margin:0; background:#1e1e1e; border:1px solid rgba(255,255,255,0.06);">
-                        <div style="display:flex; align-items:center; gap:12px; min-width:0">
-                            <div style="width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg, rgba(187,134,252,0.25), rgba(3,218,198,0.25)); border:1px solid rgba(187,134,252,0.4); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:14px; flex-shrink:0">
-                                ${initial}
+                    <div class="card" style="display:flex; flex-direction:column; gap:10px; padding:12px 14px; margin:0; background:#1e1e1e; border:1px solid rgba(255,255,255,0.07); border-radius:8px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div style="display:flex; align-items:center; gap:10px; min-width:0">
+                                <div style="width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg, rgba(187,134,252,0.25), rgba(3,218,198,0.25)); border:1px solid rgba(187,134,252,0.4); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:13px; flex-shrink:0">
+                                    ${initial}
+                                </div>
+                                <div style="display:flex; flex-direction:column; gap:2px; min-width:0">
+                                    <span style="font-weight:600; font-size:13px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${safeUser}</span>
+                                    <span style="font-size:11px; color:var(--text-secondary); display:flex; align-items:center; gap:4px">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                        ${timeStr}
+                                    </span>
+                                </div>
                             </div>
-                            <div style="display:flex; flex-direction:column; gap:2px; min-width:0">
-                                <span style="font-weight:600; font-size:14px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${safeUser}</span>
-                                <span style="font-size:11px; color:var(--text-secondary); display:flex; align-items:center; gap:4px">
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                    ${timeStr}
-                                </span>
+
+                            <div style="display:flex; align-items:center; gap:8px; flex-shrink:0">
+                                <div style="background:rgba(3,218,198,0.12); border:1px solid rgba(3,218,198,0.4); padding:4px 12px; border-radius:6px; font-size:18px; font-weight:800; letter-spacing:3px; color:var(--success); font-family:monospace; box-shadow:0 2px 6px rgba(0,0,0,0.2)">
+                                    ${safeResult}
+                                </div>
+                                <button class="btn btn-secondary" style="width:auto; padding:5px 8px; margin:0; font-size:11px; color:#888; border-color:transparent" onclick="deleteHistoryEntry('${safeId}')" title="Delete record">✕</button>
                             </div>
                         </div>
 
-                        <div style="display:flex; align-items:center; gap:10px; flex-shrink:0">
-                            <div style="background:rgba(3,218,198,0.12); border:1px solid rgba(3,218,198,0.4); padding:6px 14px; border-radius:8px; font-size:18px; font-weight:800; letter-spacing:3px; color:var(--success); font-family:monospace; box-shadow:0 2px 6px rgba(0,0,0,0.2)">
-                                ${safeResult}
-                            </div>
-                            <button class="btn btn-secondary" style="width:auto; padding:6px 9px; margin:0; font-size:12px; color:#aaa; border-color:transparent" onclick="deleteHistoryEntry('${safeId}')" title="Delete record">✕</button>
-                        </div>
+                        ${hasCrops ? `
+                        <div style="background:#141416; border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:10px 12px; display:flex; flex-direction:column; gap:8px;">
+                            ${hasTargets ? `
+                            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                                <div style="min-width:58px;">
+                                    <span style="font-size:10px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px; background:rgba(187,134,252,0.15); padding:2px 6px; border-radius:4px; border:1px solid rgba(187,134,252,0.3)">Target</span>
+                                </div>
+                                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                                    ${targetsHtml}
+                                </div>
+                            </div>` : ''}
+
+                            ${hasAnswers ? `
+                            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                                <div style="min-width:58px;">
+                                    <span style="font-size:10px; font-weight:700; color:#03dac6; text-transform:uppercase; letter-spacing:0.5px; background:rgba(3,218,198,0.15); padding:2px 6px; border-radius:4px; border:1px solid rgba(3,218,198,0.3)">Answer</span>
+                                </div>
+                                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                                    ${answersHtml}
+                                </div>
+                            </div>` : ''}
+                        </div>` : ''}
                     </div>`;
             }).join('');
+        }
+
+        function openCropZoomModal(src, title, desc) {
+            const modal = document.getElementById('crop-zoom-modal');
+            const img = document.getElementById('crop-zoom-img');
+            const titleEl = document.getElementById('crop-zoom-title');
+            const descEl = document.getElementById('crop-zoom-desc');
+            if (!modal || !img) return;
+            img.src = src;
+            if (titleEl) titleEl.innerText = title || 'Circle Crop';
+            if (descEl) descEl.innerText = desc || '';
+            modal.style.display = 'flex';
+        }
+
+        function closeCropZoomModal() {
+            const modal = document.getElementById('crop-zoom-modal');
+            if (modal) modal.style.display = 'none';
         }
 
         function renderSolverHistory() {
@@ -2362,7 +2512,14 @@
                 try {
                     const doc = await db.collection('config').doc('appSettings').get();
                     if (doc.exists && Array.isArray(doc.data().solverHistory)) {
-                        solverHistory = doc.data().solverHistory;
+                        const rawHistory = doc.data().solverHistory;
+                        const pruned = pruneSolverHistory(rawHistory);
+                        solverHistory = pruned;
+                        if (pruned.length !== rawHistory.length) {
+                            db.collection('config').doc('appSettings').set({
+                                solverHistory: pruned
+                            }, { merge: true }).catch(() => {});
+                        }
                     }
                 } catch (e) {
                     console.warn("Could not refresh from Firebase:", e);
@@ -2371,7 +2528,7 @@
                 await fetchSharedHistoryFromServer();
             }
             renderSolverHistory();
-            showToast("History refreshed from Firebase", "info", 1500);
+            showToast("History refreshed & pruned (24h)", "info", 1500);
         }
 
         async function clearSolverHistory() {
@@ -2603,8 +2760,15 @@
                             updateDebugPanelVisibility();
                         }
                         if (Array.isArray(data.solverHistory)) {
-                            solverHistory = data.solverHistory;
+                            const raw = data.solverHistory;
+                            const pruned = pruneSolverHistory(raw);
+                            solverHistory = pruned;
                             renderSolverHistory();
+                            if (db && pruned.length !== raw.length) {
+                                db.collection('config').doc('appSettings').set({
+                                    solverHistory: pruned
+                                }, { merge: true }).catch(() => {});
+                            }
                         }
                     }
                 });
@@ -3231,10 +3395,18 @@
                 const secs = (totalSeconds % 60).toFixed(1);
                 document.getElementById('solve-time').innerText = `Time: ${mins}m ${secs}s`;
 
-                // Record solver result in history log
+                // Record solver result in history log with visual crops
                 const solvedDigits = (resultNumbers.innerText || "").replace(/[^0-9]/g, "");
                 if (solvedDigits && solvedDigits.length >= 3 && solvedDigits !== "000") {
-                    recordSolverHistory(solvedDigits.substring(0, 3));
+                    const compressedTargets = [];
+                    for (let t of targets) {
+                        if (t && t.data) compressedTargets.push(await compressCircleCrop(t.data, 56));
+                    }
+                    const compressedAnswers = [];
+                    for (let a of answers) {
+                        if (a && a.data) compressedAnswers.push(await compressCircleCrop(a.data, 56));
+                    }
+                    recordSolverHistory(solvedDigits.substring(0, 3), compressedTargets, compressedAnswers);
                 }
 
                 // Auto Refresh Solver after configured seconds
