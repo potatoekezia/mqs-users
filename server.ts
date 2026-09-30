@@ -3,6 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
@@ -111,6 +112,73 @@ async function startServer() {
         message: 'Using local solver fallback.',
       });
     }
+  });
+
+  // Shared history storage for cross-instance synchronization
+  const historyFilePath = path.join(__dirname, 'solver-history.json');
+  let sharedHistory: Array<{ id: string; user: string; result: string; timestamp: number }> = [];
+
+  try {
+    if (fs.existsSync(historyFilePath)) {
+      const data = fs.readFileSync(historyFilePath, 'utf-8');
+      sharedHistory = JSON.parse(data);
+    }
+  } catch (e) {
+    console.warn('Could not load solver-history.json:', e);
+  }
+
+  function saveHistoryToFile() {
+    try {
+      fs.writeFileSync(historyFilePath, JSON.stringify(sharedHistory.slice(0, 500)), 'utf-8');
+    } catch (e) {
+      console.warn('Could not write solver-history.json:', e);
+    }
+  }
+
+  app.get('/api/history', (_req, res) => {
+    res.json({ history: sharedHistory });
+  });
+
+  app.post('/api/history', (req, res) => {
+    try {
+      const { entry, history } = req.body || {};
+      let modified = false;
+
+      if (Array.isArray(history)) {
+        const existingIds = new Set(sharedHistory.map(h => h.id));
+        for (const item of history) {
+          if (item && item.id && !existingIds.has(item.id)) {
+            sharedHistory.push(item);
+            existingIds.add(item.id);
+            modified = true;
+          }
+        }
+      }
+
+      if (entry && entry.id) {
+        const existing = sharedHistory.find(h => h.id === entry.id);
+        if (!existing) {
+          sharedHistory.unshift(entry);
+          modified = true;
+        }
+      }
+
+      if (modified) {
+        sharedHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        if (sharedHistory.length > 500) sharedHistory = sharedHistory.slice(0, 500);
+        saveHistoryToFile();
+      }
+
+      res.json({ success: true, history: sharedHistory });
+    } catch {
+      res.status(500).json({ success: false, history: sharedHistory });
+    }
+  });
+
+  app.delete('/api/history', (_req, res) => {
+    sharedHistory = [];
+    saveHistoryToFile();
+    res.json({ success: true, history: [] });
   });
 
   // Serve static files or Vite middlewares

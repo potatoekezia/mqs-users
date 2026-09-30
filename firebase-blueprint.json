@@ -113,6 +113,26 @@
           "description": "List of ignored pair keys."
         }
       }
+    },
+    "SolverHistory": {
+      "title": "Solver History",
+      "description": "Log of solved quiz results across users (lightweight text numbers only).",
+      "type": "object",
+      "properties": {
+        "user": {
+          "type": "string",
+          "description": "Name of the user who ran the solver."
+        },
+        "result": {
+          "type": "string",
+          "description": "3-digit solver result numbers (e.g. 421)."
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Creation timestamp in milliseconds."
+        }
+      },
+      "required": ["user", "result", "timestamp"]
     }
   },
   "firestore": {
@@ -139,6 +159,10 @@
     "/screenshots": {
       "schema": "Screenshot",
       "description": "Shared collection of saved screenshots."
+    },
+    "/solver_history": {
+      "schema": "SolverHistory",
+      "description": "Shared log of solved quiz answers."
     }
   }
 }

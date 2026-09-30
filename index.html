@@ -974,6 +974,68 @@
         <div id="storage-list"></div>
     </div>
 
+    <!-- History Tab -->
+    <div id="tab-history" class="tab-content">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h1 style="margin:0">Solver History</h1>
+            <div style="display:flex; gap:8px;">
+                <button class="btn btn-secondary" style="width:auto; padding:6px 12px; font-size:12px; margin:0" onclick="refreshSolverHistory()">Refresh</button>
+                <button class="btn btn-danger" style="width:auto; padding:6px 12px; font-size:12px; margin:0" onclick="clearSolverHistory()">Clear</button>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:12px; padding:12px 14px; display:flex; justify-content:space-between; align-items:center; background:#1e1e1e;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:12px; color:var(--text-secondary)">Active User:</span>
+                <span id="history-active-user-badge" style="font-size:13px; font-weight:700; color:var(--accent)">Anonymous</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-secondary)">
+                <span id="history-count" style="color:#fff; font-weight:700">0 solves</span>
+            </div>
+        </div>
+
+        <!-- Filter and Sort Controls -->
+        <div class="card" style="margin-bottom:12px; padding:12px; background:#1e1e1e; display:flex; flex-direction:column; gap:10px;">
+            <div>
+                <input type="text" id="history-search-input" placeholder="Search by user or result (e.g. User1 or 421)..." oninput="applyHistoryFiltersAndSort()" style="margin-bottom:0">
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <div>
+                    <label style="font-size:11px; color:var(--text-secondary); margin-bottom:4px; display:block; font-weight:600">Filter User</label>
+                    <select id="history-filter-user" onchange="applyHistoryFiltersAndSort()" style="margin-bottom:0; font-size:12px; padding:8px 10px; background:#2c2c2c; color:#fff; border:1px solid #444; border-radius:4px; width:100%">
+                        <option value="all">All Users</option>
+                        <option value="my_solves">My Solves Only</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:11px; color:var(--text-secondary); margin-bottom:4px; display:block; font-weight:600">Sort By</label>
+                    <select id="history-sort-by" onchange="applyHistoryFiltersAndSort()" style="margin-bottom:0; font-size:12px; padding:8px 10px; background:#2c2c2c; color:#fff; border:1px solid #444; border-radius:4px; width:100%">
+                        <option value="date_desc">Newest First</option>
+                        <option value="date_asc">Oldest First</option>
+                        <option value="user_asc">User (A-Z)</option>
+                        <option value="user_desc">User (Z-A)</option>
+                        <option value="result_asc">Result (Low to High)</option>
+                        <option value="result_desc">Result (High to Low)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; padding-top:2px">
+                <div style="display:flex; gap:6px; flex-wrap:wrap">
+                    <button type="button" id="btn-filter-all" class="btn btn-secondary date-filter-btn" style="width:auto; padding:4px 10px; margin:0; font-size:11px; border-color:var(--accent); color:var(--accent)" onclick="setDateFilter('all')">All Time</button>
+                    <button type="button" id="btn-filter-today" class="btn btn-secondary date-filter-btn" style="width:auto; padding:4px 10px; margin:0; font-size:11px" onclick="setDateFilter('today')">Today</button>
+                    <button type="button" id="btn-filter-7days" class="btn btn-secondary date-filter-btn" style="width:auto; padding:4px 10px; margin:0; font-size:11px" onclick="setDateFilter('7days')">Last 7 Days</button>
+                </div>
+                <button type="button" class="btn btn-secondary" style="width:auto; padding:4px 10px; margin:0; font-size:11px; color:var(--text-secondary)" onclick="resetHistoryFilters()">Reset</button>
+            </div>
+        </div>
+
+        <div id="history-list" style="display:flex; flex-direction:column; gap:8px; min-height:80px">
+            <!-- Dynamically populated -->
+        </div>
+    </div>
+
     <!-- Settings Tab -->
     <div id="tab-settings" class="tab-content">
         <h1 style="margin-top:0">Settings</h1>
@@ -981,6 +1043,16 @@
         <div id="fb-status-bar" class="card" style="display:flex; align-items:center; gap:10px; padding:12px; margin-bottom:16px; border-left: 4px solid #666;">
             <div id="fb-status-dot" style="width:12px; height:12px; border-radius:50%; background:#666;"></div>
             <span id="fb-status-text" style="font-weight:500">Firebase: Not Connected</span>
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+            <h3>User Profile</h3>
+            <p style="font-size:12px; color:var(--text-secondary); margin-bottom:12px">Enter your username for the solver history log. This setting is saved on this browser only.</p>
+            <div style="display:flex; gap:10px; align-items:center">
+                <input type="text" id="solver-user-name-input" placeholder="Enter username (e.g. User1)" style="flex:1; margin-bottom:0">
+                <button class="btn" style="width:auto; padding:10px 18px; margin-bottom:0" onclick="saveSolverUserName()">Save</button>
+            </div>
+            <div id="solver-user-name-display" style="font-size:12px; color:var(--accent); margin-top:8px; display:flex; align-items:center; gap:6px"></div>
         </div>
 
         <div class="card">
@@ -1068,6 +1140,10 @@
         <div class="nav-item" onclick="switchTab('dictionary')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
             Dict
+        </div>
+        <div class="nav-item" onclick="switchTab('history')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            History
         </div>
         <div class="nav-item hidden" onclick="switchTab('storage')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
@@ -1386,6 +1462,11 @@
         let screenshotAuditMap = new Map(); // key: hash, value: { fileName, monsterName, timestamp, fileSize }
         let pendingAuditScreenshotData = null;
         let ignoredDuplicatePairsSet = new Set(); // Stores ignored pair identifiers so false positives are hidden
+        let solverHistory = [];
+        try {
+            const cachedHist = localStorage.getItem('solver_history_cache');
+            if (cachedHist) solverHistory = JSON.parse(cachedHist);
+        } catch (e) {}
 
         function loadImage(src) {
             return new Promise((resolve, reject) => {
@@ -1481,6 +1562,15 @@
             renderStorage();
             setupEventListeners();
             renderPreviewCircles();
+            renderSolverHistory();
+            updateSolverUserNameDisplay();
+            // Sync history across instances on startup
+            if (solverHistory.length > 0) {
+                pushHistoryToServer();
+            }
+            fetchSharedHistoryFromServer();
+            setInterval(fetchSharedHistoryFromServer, 4000);
+            window.addEventListener('focus', fetchSharedHistoryFromServer);
             setTimeout(() => deduplicateDictionary(), 2000);
         };
 
@@ -1851,6 +1941,21 @@
             document.getElementById('debug-mode-toggle').checked = localStorage.getItem('debug-mode') === 'true';
             updateDebugPanelVisibility();
 
+            // Load user profile name (browser local)
+            const savedUserName = localStorage.getItem('solver_user_name') || '';
+            const userInputEl = document.getElementById('solver-user-name-input');
+            if (userInputEl) userInputEl.value = savedUserName;
+            updateSolverUserNameDisplay(savedUserName);
+
+            // Load cached solver history
+            try {
+                const cachedHistory = localStorage.getItem('solver_history_cache');
+                if (cachedHistory) {
+                    solverHistory = JSON.parse(cachedHistory);
+                    renderSolverHistory();
+                }
+            } catch (e) {}
+
             // Load cached screenshot audit metadata
             try {
                 const cachedAudit = localStorage.getItem('screenshot_audit_cache');
@@ -1884,13 +1989,477 @@
         function switchTab(tab) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            document.getElementById(`tab-${tab}`).classList.add('active');
-            const navItems = document.querySelectorAll('.nav-item');
-            const index = ['solver', 'dictionary', 'storage', 'settings'].indexOf(tab);
-            navItems[index].classList.add('active');
+            const targetEl = document.getElementById(`tab-${tab}`);
+            if (targetEl) targetEl.classList.add('active');
+            document.querySelectorAll(`.nav-item[onclick*="'${tab}'"]`).forEach(el => el.classList.add('active'));
             activeTab = tab;
             if (tab === 'solver') renderPreviewCircles();
             else if (tab === 'dictionary') renderDictPreview();
+            else if (tab === 'history') {
+                renderSolverHistory();
+                fetchSharedHistoryFromServer();
+            }
+        }
+
+        // --- Solver History & User Profile ---
+        function escapeHtml(str) {
+            if (!str) return "";
+            return String(str)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function formatPhilippineTime(timestamp) {
+            if (!timestamp) return "N/A";
+            const date = new Date(timestamp);
+            try {
+                // 12-hour format in Philippine Time (Asia/Manila)
+                const options = {
+                    timeZone: 'Asia/Manila',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true
+                };
+                return new Intl.DateTimeFormat('en-US', options).format(date) + " (PH Time)";
+            } catch (e) {
+                // UTC+8 fallback
+                const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
+                const pht = new Date(utc + (3600000 * 8));
+                let hours = pht.getHours();
+                const minutes = String(pht.getMinutes()).padStart(2, '0');
+                const seconds = String(pht.getSeconds()).padStart(2, '0');
+                const ampm = hours >= 12 ? 'PM' : 'AM';
+                hours = hours % 12 || 12;
+                const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                return `${months[pht.getMonth()]} ${pht.getDate()}, ${pht.getFullYear()}, ${hours}:${minutes}:${seconds} ${ampm} (PH Time)`;
+            }
+        }
+
+        function getSolverUserName() {
+            return (localStorage.getItem('solver_user_name') || 'Anonymous').trim();
+        }
+
+        function saveSolverUserName() {
+            const input = document.getElementById('solver-user-name-input');
+            const val = (input ? input.value : '').trim();
+            if (!val) {
+                showToast("Please enter a username", "error", 2000);
+                return;
+            }
+            localStorage.setItem('solver_user_name', val);
+            updateSolverUserNameDisplay(val);
+            showToast(`User name set to "${val}" (this browser)`, "success", 2500);
+        }
+
+        function updateSolverUserNameDisplay(name) {
+            const current = name || localStorage.getItem('solver_user_name') || 'Anonymous';
+            const badge = document.getElementById('history-active-user-badge');
+            if (badge) badge.innerText = current;
+            const statusEl = document.getElementById('solver-user-name-display');
+            if (statusEl) {
+                statusEl.innerHTML = `<span style="color:var(--text-secondary)">Active user for this browser:</span> <strong style="color:var(--accent)">${escapeHtml(current)}</strong>`;
+            }
+            const input = document.getElementById('solver-user-name-input');
+            if (input && !input.value && current !== 'Anonymous') {
+                input.value = current;
+            }
+        }
+
+        function mergeSolverHistory(newItems) {
+            if (!Array.isArray(newItems) || newItems.length === 0) return false;
+            let changed = false;
+            const map = new Map();
+
+            // Existing local items
+            solverHistory.forEach(item => {
+                if (item) {
+                    const id = item.id || `hist_${item.user}_${item.result}_${item.timestamp}`;
+                    map.set(id, { ...item, id });
+                }
+            });
+
+            // Merge incoming items
+            newItems.forEach(item => {
+                if (!item) return;
+                const id = item.id || `hist_${item.user}_${item.result}_${item.timestamp}`;
+                if (!map.has(id)) {
+                    map.set(id, {
+                        id: id,
+                        user: item.user || 'Unknown',
+                        result: item.result || '---',
+                        timestamp: item.timestamp || Date.now()
+                    });
+                    changed = true;
+                }
+            });
+
+            if (changed) {
+                solverHistory = Array.from(map.values());
+                solverHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                if (solverHistory.length > 300) solverHistory = solverHistory.slice(0, 300);
+                try {
+                    localStorage.setItem('solver_history_cache', JSON.stringify(solverHistory.slice(0, 100)));
+                } catch (e) {}
+                renderSolverHistory();
+            }
+            return changed;
+        }
+
+        async function fetchSharedHistoryFromServer() {
+            try {
+                const res = await fetch('/api/history');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && Array.isArray(data.history)) {
+                        mergeSolverHistory(data.history);
+                    }
+                }
+            } catch (e) {
+                // Ignore transient network errors
+            }
+        }
+
+        async function pushHistoryToServer(entry) {
+            try {
+                const res = await fetch('/api/history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ entry, history: solverHistory.slice(0, 50) })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && Array.isArray(data.history)) {
+                        mergeSolverHistory(data.history);
+                    }
+                }
+            } catch (e) {
+                console.warn("Could not push history to server:", e);
+            }
+        }
+
+        async function recordSolverHistory(resultDigits) {
+            if (!resultDigits || resultDigits === "000") return;
+            const currentUser = getSolverUserName();
+            const entry = {
+                id: 'hist_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+                user: currentUser,
+                result: String(resultDigits),
+                timestamp: Date.now()
+            };
+
+            // Prepend to local history
+            solverHistory.unshift(entry);
+            if (solverHistory.length > 300) solverHistory = solverHistory.slice(0, 300);
+            try {
+                localStorage.setItem('solver_history_cache', JSON.stringify(solverHistory.slice(0, 100)));
+            } catch (e) {}
+
+            renderSolverHistory();
+
+            // 1. Sync immediately with backend server (synchronizes across all browsers in real-time)
+            pushHistoryToServer(entry);
+
+            // 2. Sync to Firebase Firestore via config/appSettings (shared across all devices)
+            if (db) {
+                try {
+                    await db.collection('config').doc('appSettings').set({
+                        solverHistory: solverHistory.slice(0, 200)
+                    }, { merge: true });
+                } catch (e) {
+                    console.warn("Could not sync history to Firestore appSettings:", e?.message || e);
+                }
+
+                // Also try dedicated solver_history collection in case rules allow it
+                try {
+                    await db.collection('solver_history').doc(entry.id).set({
+                        user: entry.user,
+                        result: entry.result,
+                        timestamp: entry.timestamp
+                    });
+                } catch (e) {}
+            }
+        }
+
+        let historyDateFilter = 'all';
+
+        function setDateFilter(range) {
+            historyDateFilter = range;
+            const buttons = [
+                { id: 'btn-filter-all', key: 'all' },
+                { id: 'btn-filter-today', key: 'today' },
+                { id: 'btn-filter-7days', key: '7days' }
+            ];
+            buttons.forEach(b => {
+                const el = document.getElementById(b.id);
+                if (el) {
+                    if (b.key === range) {
+                        el.style.borderColor = 'var(--accent)';
+                        el.style.color = 'var(--accent)';
+                        el.style.fontWeight = '700';
+                    } else {
+                        el.style.borderColor = 'transparent';
+                        el.style.color = 'var(--text-secondary)';
+                        el.style.fontWeight = 'normal';
+                    }
+                }
+            });
+            applyHistoryFiltersAndSort();
+        }
+
+        function resetHistoryFilters() {
+            const searchInput = document.getElementById('history-search-input');
+            const userSelect = document.getElementById('history-filter-user');
+            const sortSelect = document.getElementById('history-sort-by');
+            if (searchInput) searchInput.value = '';
+            if (userSelect) userSelect.value = 'all';
+            if (sortSelect) sortSelect.value = 'date_desc';
+            setDateFilter('all');
+        }
+
+        function updateHistoryUserFilterOptions() {
+            const userSelect = document.getElementById('history-filter-user');
+            if (!userSelect) return;
+            const currentVal = userSelect.value;
+            const currentUser = getSolverUserName();
+
+            // Extract unique users
+            const usersSet = new Set();
+            solverHistory.forEach(item => {
+                if (item.user && item.user.trim()) usersSet.add(item.user.trim());
+            });
+
+            let html = `<option value="all">All Users</option>`;
+            html += `<option value="my_solves">My Solves (${escapeHtml(currentUser)})</option>`;
+
+            const sortedUsers = Array.from(usersSet).sort((a, b) => a.localeCompare(b));
+            sortedUsers.forEach(u => {
+                if (u.toLowerCase() !== currentUser.toLowerCase()) {
+                    html += `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`;
+                }
+            });
+
+            userSelect.innerHTML = html;
+            if (currentVal && Array.from(userSelect.options).some(o => o.value === currentVal)) {
+                userSelect.value = currentVal;
+            } else {
+                userSelect.value = 'all';
+            }
+        }
+
+        function applyHistoryFiltersAndSort() {
+            const searchInput = document.getElementById('history-search-input');
+            const userSelect = document.getElementById('history-filter-user');
+            const sortSelect = document.getElementById('history-sort-by');
+            const countEl = document.getElementById('history-count');
+
+            const query = (searchInput?.value || '').toLowerCase().trim();
+            const selectedUser = userSelect?.value || 'all';
+            const selectedSort = sortSelect?.value || 'date_desc';
+            const currentUser = getSolverUserName().toLowerCase();
+
+            // Calculate start of today in Philippine Time (Asia/Manila, UTC+8)
+            const now = new Date();
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const phtNow = new Date(utc + (3600000 * 8));
+            phtNow.setHours(0, 0, 0, 0);
+            const startOfTodayMs = phtNow.getTime() - (3600000 * 8);
+            const sevenDaysAgoMs = Date.now() - (7 * 24 * 60 * 60 * 1000);
+
+            const isFiltered = !!query || selectedUser !== 'all' || historyDateFilter !== 'all';
+
+            let filtered = solverHistory.filter(item => {
+                // Search query
+                if (query) {
+                    const u = (item.user || '').toLowerCase();
+                    const r = (item.result || '').toLowerCase();
+                    if (!u.includes(query) && !r.includes(query)) return false;
+                }
+
+                // User filter
+                if (selectedUser === 'my_solves') {
+                    if ((item.user || '').toLowerCase() !== currentUser) return false;
+                } else if (selectedUser !== 'all') {
+                    if ((item.user || '').toLowerCase() !== selectedUser.toLowerCase()) return false;
+                }
+
+                // Date filter
+                if (historyDateFilter === 'today') {
+                    if ((item.timestamp || 0) < startOfTodayMs) return false;
+                } else if (historyDateFilter === '7days') {
+                    if ((item.timestamp || 0) < sevenDaysAgoMs) return false;
+                }
+
+                return true;
+            });
+
+            // Sorting
+            filtered.sort((a, b) => {
+                if (selectedSort === 'date_asc') return (a.timestamp || 0) - (b.timestamp || 0);
+                if (selectedSort === 'date_desc') return (b.timestamp || 0) - (a.timestamp || 0);
+                if (selectedSort === 'user_asc') return (a.user || '').localeCompare(b.user || '');
+                if (selectedSort === 'user_desc') return (b.user || '').localeCompare(a.user || '');
+                if (selectedSort === 'result_asc') return (a.result || '').localeCompare(b.result || '');
+                if (selectedSort === 'result_desc') return (b.result || '').localeCompare(a.result || '');
+                return 0;
+            });
+
+            if (countEl) {
+                if (isFiltered) {
+                    countEl.innerText = `${filtered.length} of ${solverHistory.length} solves`;
+                } else {
+                    countEl.innerText = `${solverHistory.length} solves`;
+                }
+            }
+
+            renderHistoryListElements(filtered, isFiltered);
+        }
+
+        function renderHistoryListElements(items, isFiltered) {
+            const listEl = document.getElementById('history-list');
+            if (!listEl) return;
+
+            if (items.length === 0) {
+                if (isFiltered) {
+                    listEl.innerHTML = `
+                        <div class="card" style="text-align:center; padding:28px 16px; color:var(--text-secondary); background:#1a1a1a;">
+                            <div style="font-size:24px; margin-bottom:6px">🔍</div>
+                            <div style="font-size:14px; font-weight:600; color:#fff">No Matching Solves Found</div>
+                            <div style="font-size:12px; margin-top:4px; margin-bottom:12px">Try changing your search term, user filter, or date range.</div>
+                            <button class="btn btn-secondary" style="width:auto; padding:6px 14px; margin:0 auto; font-size:12px" onclick="resetHistoryFilters()">Reset Filters</button>
+                        </div>`;
+                } else {
+                    listEl.innerHTML = `
+                        <div class="card" style="text-align:center; padding:32px 16px; color:var(--text-secondary); background:#1a1a1a;">
+                            <div style="font-size:26px; margin-bottom:8px">📜</div>
+                            <div style="font-size:14px; font-weight:600; color:#fff">No Solver History Yet</div>
+                            <div style="font-size:12px; margin-top:4px">Run the solver on a quiz to automatically record the user, solution result, and Philippine Time.</div>
+                        </div>`;
+                }
+                return;
+            }
+
+            listEl.innerHTML = items.map((item) => {
+                const initial = (item.user && item.user.trim()) ? item.user.trim().charAt(0).toUpperCase() : '?';
+                const timeStr = formatPhilippineTime(item.timestamp);
+                const safeUser = escapeHtml(item.user || 'Anonymous');
+                const safeResult = escapeHtml(item.result || '---');
+                const safeId = escapeHtml(item.id || '');
+
+                return `
+                    <div class="card" style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; margin:0; background:#1e1e1e; border:1px solid rgba(255,255,255,0.06);">
+                        <div style="display:flex; align-items:center; gap:12px; min-width:0">
+                            <div style="width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg, rgba(187,134,252,0.25), rgba(3,218,198,0.25)); border:1px solid rgba(187,134,252,0.4); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:14px; flex-shrink:0">
+                                ${initial}
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:2px; min-width:0">
+                                <span style="font-weight:600; font-size:14px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${safeUser}</span>
+                                <span style="font-size:11px; color:var(--text-secondary); display:flex; align-items:center; gap:4px">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                    ${timeStr}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div style="display:flex; align-items:center; gap:10px; flex-shrink:0">
+                            <div style="background:rgba(3,218,198,0.12); border:1px solid rgba(3,218,198,0.4); padding:6px 14px; border-radius:8px; font-size:18px; font-weight:800; letter-spacing:3px; color:var(--success); font-family:monospace; box-shadow:0 2px 6px rgba(0,0,0,0.2)">
+                                ${safeResult}
+                            </div>
+                            <button class="btn btn-secondary" style="width:auto; padding:6px 9px; margin:0; font-size:12px; color:#aaa; border-color:transparent" onclick="deleteHistoryEntry('${safeId}')" title="Delete record">✕</button>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        function renderSolverHistory() {
+            updateSolverUserNameDisplay();
+            updateHistoryUserFilterOptions();
+            applyHistoryFiltersAndSort();
+        }
+
+        async function refreshSolverHistory() {
+            await fetchSharedHistoryFromServer();
+            if (db) {
+                try {
+                    const doc = await db.collection('config').doc('appSettings').get();
+                    if (doc.exists && Array.isArray(doc.data().solverHistory)) {
+                        mergeSolverHistory(doc.data().solverHistory);
+                    }
+                } catch (e) {}
+            }
+            renderSolverHistory();
+            showToast("History refreshed & synced", "info", 1500);
+        }
+
+        async function clearSolverHistory() {
+            if (solverHistory.length === 0) return alert("Solver history is already empty.");
+            if (!confirm("Are you sure you want to clear the solver history log across all instances?")) return;
+            solverHistory = [];
+            localStorage.removeItem('solver_history_cache');
+            renderSolverHistory();
+
+            // Clear on server
+            try {
+                await fetch('/api/history', { method: 'DELETE' });
+            } catch (e) {}
+
+            // Clear in Firestore
+            if (db) {
+                try {
+                    await db.collection('config').doc('appSettings').set({
+                        solverHistory: []
+                    }, { merge: true });
+                } catch (e) {}
+
+                try {
+                    const snap = await db.collection('solver_history').limit(100).get();
+                    const batch = db.batch();
+                    snap.docs.forEach(doc => batch.delete(doc.ref));
+                    await batch.commit();
+                } catch (e) {}
+            }
+            showToast("Solver history cleared across all instances", "success", 2000);
+        }
+
+        async function deleteHistoryEntry(id) {
+            solverHistory = solverHistory.filter(h => h.id !== id);
+            try {
+                localStorage.setItem('solver_history_cache', JSON.stringify(solverHistory.slice(0, 100)));
+            } catch (e) {}
+            renderSolverHistory();
+
+            // Sync updated list to server
+            try {
+                await fetch('/api/history', { method: 'DELETE' });
+                if (solverHistory.length > 0) {
+                    await fetch('/api/history', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ history: solverHistory })
+                    });
+                }
+            } catch (e) {}
+
+            // Sync updated list to Firestore
+            if (db) {
+                try {
+                    await db.collection('config').doc('appSettings').set({
+                        solverHistory: solverHistory.slice(0, 200)
+                    }, { merge: true });
+                } catch (e) {}
+
+                if (id && !id.startsWith('hist_')) {
+                    try {
+                        await db.collection('solver_history').doc(id).delete();
+                    } catch (e) {}
+                }
+            }
         }
 
         function getFirestoreInstance(appInstance, databaseId) {
@@ -2068,6 +2637,9 @@
                             localStorage.setItem('debug-mode', data.debugPanelEnabled);
                             updateDebugPanelVisibility();
                         }
+                        if (Array.isArray(data.solverHistory)) {
+                            mergeSolverHistory(data.solverHistory);
+                        }
                     }
                 });
                 activeDbListeners.push(unsubSettings);
@@ -2100,6 +2672,28 @@
                     }
                 });
                 activeDbListeners.push(unsubIgnored);
+
+                // Listen to shared solver history records in Firebase
+                const unsubHistory = db.collection('solver_history').orderBy('timestamp', 'desc').limit(150).onSnapshot(snapshot => {
+                    const items = [];
+                    snapshot.forEach(doc => {
+                        const d = doc.data();
+                        items.push({
+                            id: doc.id,
+                            user: d.user || 'Unknown',
+                            result: d.result || '---',
+                            timestamp: d.timestamp || Date.now()
+                        });
+                    });
+                    solverHistory = items;
+                    try {
+                        localStorage.setItem('solver_history_cache', JSON.stringify(items.slice(0, 50)));
+                    } catch (e) {}
+                    renderSolverHistory();
+                }, err => {
+                    console.warn("Solver history snapshot notice:", err?.message || err);
+                });
+                activeDbListeners.push(unsubHistory);
 
             } catch (e) {
                 console.error("Firebase init error:", e);
@@ -2690,6 +3284,12 @@
                 const mins = Math.floor(totalSeconds / 60);
                 const secs = (totalSeconds % 60).toFixed(1);
                 document.getElementById('solve-time').innerText = `Time: ${mins}m ${secs}s`;
+
+                // Record solver result in history log
+                const solvedDigits = (resultNumbers.innerText || "").replace(/[^0-9]/g, "");
+                if (solvedDigits && solvedDigits.length >= 3 && solvedDigits !== "000") {
+                    recordSolverHistory(solvedDigits.substring(0, 3));
+                }
 
                 // Auto Refresh Solver after configured seconds
                 if (solverAutoRefreshSeconds > 0) {

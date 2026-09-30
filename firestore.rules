@@ -67,5 +67,12 @@ service cloud.firestore {
       allow write: if isAuthenticated();
       allow delete: if isAuthenticated();
     }
+
+    match /solver_history/{historyId} {
+      // Allow authenticated users to read, create, and clear solver history logs
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
   }
 }
