@@ -2097,6 +2097,19 @@
             }
         }
 
+        function formatDuration(dur) {
+            if (dur === undefined || dur === null || dur === '') return '';
+            if (typeof dur === 'string') return dur;
+            const num = Number(dur);
+            if (isNaN(num) || num <= 0) return '';
+            if (num < 60) {
+                return `${num.toFixed(1)}s`;
+            }
+            const mins = Math.floor(num / 60);
+            const secs = (num % 60).toFixed(1);
+            return `${mins}m ${secs}s`;
+        }
+
         function getSolverUserName() {
             return (localStorage.getItem('solver_user_name') || 'Anonymous').trim();
         }
@@ -2149,10 +2162,14 @@
                         id: id,
                         user: item.user || 'Unknown',
                         result: item.result || '---',
+                        duration: (typeof item.duration === 'number' || typeof item.duration === 'string') ? item.duration : null,
                         timestamp: item.timestamp || Date.now(),
                         targets: Array.isArray(item.targets) ? item.targets : [],
                         answers: Array.isArray(item.answers) ? item.answers : []
                     });
+                    changed = true;
+                } else if (item.duration && !map.get(id).duration) {
+                    map.get(id).duration = item.duration;
                     changed = true;
                 }
             });
@@ -2262,13 +2279,14 @@
             }
         }
 
-        async function recordSolverHistory(resultDigits, targetCrops = [], answerCrops = []) {
+        async function recordSolverHistory(resultDigits, targetCrops = [], answerCrops = [], duration = null) {
             if (!resultDigits || resultDigits === "000") return;
             const currentUser = getSolverUserName();
             const entry = {
                 id: 'hist_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
                 user: currentUser,
                 result: String(resultDigits),
+                duration: (typeof duration === 'number' && !isNaN(duration)) ? Math.round(duration * 10) / 10 : (duration || null),
                 timestamp: Date.now(),
                 targets: Array.isArray(targetCrops) ? targetCrops : [],
                 answers: Array.isArray(answerCrops) ? answerCrops : []
@@ -2451,6 +2469,7 @@
             listEl.innerHTML = items.map((item) => {
                 const initial = (item.user && item.user.trim()) ? item.user.trim().charAt(0).toUpperCase() : '?';
                 const timeStr = formatPhilippineTime(item.timestamp);
+                const durationStr = formatDuration(item.duration);
                 const safeUser = escapeHtml(item.user || 'Anonymous');
                 const safeResult = escapeHtml(item.result || '---');
                 const safeId = escapeHtml(item.id || '');
@@ -2513,9 +2532,18 @@
                                 </div>
                                 <div style="display:flex; flex-direction:column; gap:2px; min-width:0">
                                     <span style="font-weight:600; font-size:13px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${safeUser}</span>
-                                    <span style="font-size:11px; color:var(--text-secondary); display:flex; align-items:center; gap:4px">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                        ${timeStr}
+                                    <span style="font-size:11px; color:var(--text-secondary); display:flex; align-items:center; gap:5px; flex-wrap:wrap">
+                                        <span style="display:inline-flex; align-items:center; gap:4px">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                            ${timeStr}
+                                        </span>
+                                        ${durationStr ? `
+                                            <span style="color:#555">•</span>
+                                            <span style="display:inline-flex; align-items:center; gap:3px; color:#38bdf8; font-weight:600; font-family:monospace;" title="Answering time: ${durationStr}">
+                                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 10"/></svg>
+                                                ${durationStr}
+                                            </span>
+                                        ` : ''}
                                     </span>
                                 </div>
                             </div>
@@ -2647,8 +2675,9 @@
             if (entry && detail) {
                 const user = entry.user || 'Unknown';
                 const res = entry.result || '---';
+                const durStr = formatDuration(entry.duration);
                 const timeStr = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-                detail.innerHTML = `<strong>Result:</strong> ${escapeHtml(res)} &nbsp;|&nbsp; <strong>User:</strong> ${escapeHtml(user)} ${timeStr ? `&nbsp;(${timeStr})` : ''}`;
+                detail.innerHTML = `<strong>Result:</strong> ${escapeHtml(res)} &nbsp;|&nbsp; <strong>User:</strong> ${escapeHtml(user)}${durStr ? ` &nbsp;|&nbsp; <strong>Duration:</strong> ${escapeHtml(durStr)}` : ''} ${timeStr ? `&nbsp;(${timeStr})` : ''}`;
                 detail.style.display = 'block';
             } else if (detail) {
                 detail.style.display = 'none';
@@ -3522,7 +3551,7 @@
                     for (let a of answers) {
                         if (a && a.data) compressedAnswers.push(await compressCircleCrop(a.data, 56));
                     }
-                    recordSolverHistory(solvedDigits.substring(0, 3), compressedTargets, compressedAnswers);
+                    recordSolverHistory(solvedDigits.substring(0, 3), compressedTargets, compressedAnswers, totalSeconds);
                 }
 
                 // Auto Refresh Solver after configured seconds
