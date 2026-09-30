@@ -1464,8 +1464,7 @@
         let ignoredDuplicatePairsSet = new Set(); // Stores ignored pair identifiers so false positives are hidden
         let solverHistory = [];
         try {
-            const cachedHist = localStorage.getItem('solver_history_cache');
-            if (cachedHist) solverHistory = JSON.parse(cachedHist);
+            localStorage.removeItem('solver_history_cache');
         } catch (e) {}
 
         function loadImage(src) {
@@ -1947,15 +1946,6 @@
             if (userInputEl) userInputEl.value = savedUserName;
             updateSolverUserNameDisplay(savedUserName);
 
-            // Load cached solver history
-            try {
-                const cachedHistory = localStorage.getItem('solver_history_cache');
-                if (cachedHistory) {
-                    solverHistory = JSON.parse(cachedHistory);
-                    renderSolverHistory();
-                }
-            } catch (e) {}
-
             // Load cached screenshot audit metadata
             try {
                 const cachedAudit = localStorage.getItem('screenshot_audit_cache');
@@ -2104,9 +2094,6 @@
                 solverHistory = Array.from(map.values());
                 solverHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                 if (solverHistory.length > 300) solverHistory = solverHistory.slice(0, 300);
-                try {
-                    localStorage.setItem('solver_history_cache', JSON.stringify(solverHistory.slice(0, 100)));
-                } catch (e) {}
                 renderSolverHistory();
             }
             return changed;
@@ -2154,37 +2141,24 @@
                 timestamp: Date.now()
             };
 
-            // Prepend to local history
+            // Prepend to solver history
             solverHistory.unshift(entry);
             if (solverHistory.length > 300) solverHistory = solverHistory.slice(0, 300);
-            try {
-                localStorage.setItem('solver_history_cache', JSON.stringify(solverHistory.slice(0, 100)));
-            } catch (e) {}
-
             renderSolverHistory();
 
-            // 1. Sync immediately with backend server (synchronizes across all browsers in real-time)
-            pushHistoryToServer(entry);
-
-            // 2. Sync to Firebase Firestore via config/appSettings (shared across all devices)
+            // 1. Save directly to Firebase Firestore
             if (db) {
                 try {
                     await db.collection('config').doc('appSettings').set({
-                        solverHistory: solverHistory.slice(0, 200)
+                        solverHistory: solverHistory.slice(0, 250)
                     }, { merge: true });
                 } catch (e) {
-                    console.warn("Could not sync history to Firestore appSettings:", e?.message || e);
+                    console.warn("Could not save solver history to Firebase:", e?.message || e);
                 }
-
-                // Also try dedicated solver_history collection in case rules allow it
-                try {
-                    await db.collection('solver_history').doc(entry.id).set({
-                        user: entry.user,
-                        result: entry.result,
-                        timestamp: entry.timestamp
-                    });
-                } catch (e) {}
             }
+
+            // 2. Also broadcast to server endpoint for instant multi-instance delivery
+            pushHistoryToServer(entry);
         }
 
         let historyDateFilter = 'all';
@@ -2384,55 +2358,61 @@
         }
 
         async function refreshSolverHistory() {
-            await fetchSharedHistoryFromServer();
             if (db) {
                 try {
                     const doc = await db.collection('config').doc('appSettings').get();
                     if (doc.exists && Array.isArray(doc.data().solverHistory)) {
-                        mergeSolverHistory(doc.data().solverHistory);
+                        solverHistory = doc.data().solverHistory;
                     }
-                } catch (e) {}
+                } catch (e) {
+                    console.warn("Could not refresh from Firebase:", e);
+                }
+            } else {
+                await fetchSharedHistoryFromServer();
             }
             renderSolverHistory();
-            showToast("History refreshed & synced", "info", 1500);
+            showToast("History refreshed from Firebase", "info", 1500);
         }
 
         async function clearSolverHistory() {
             if (solverHistory.length === 0) return alert("Solver history is already empty.");
-            if (!confirm("Are you sure you want to clear the solver history log across all instances?")) return;
+            if (!confirm("Are you sure you want to clear the solver history log from Firebase?")) return;
             solverHistory = [];
-            localStorage.removeItem('solver_history_cache');
             renderSolverHistory();
+
+            // Clear in Firebase Firestore
+            if (db) {
+                try {
+                    await db.collection('config').doc('appSettings').set({
+                        solverHistory: []
+                    }, { merge: true });
+                } catch (e) {
+                    console.warn("Could not clear solver history in Firebase:", e);
+                }
+            }
 
             // Clear on server
             try {
                 await fetch('/api/history', { method: 'DELETE' });
             } catch (e) {}
 
-            // Clear in Firestore
-            if (db) {
-                try {
-                    await db.collection('config').doc('appSettings').set({
-                        solverHistory: []
-                    }, { merge: true });
-                } catch (e) {}
-
-                try {
-                    const snap = await db.collection('solver_history').limit(100).get();
-                    const batch = db.batch();
-                    snap.docs.forEach(doc => batch.delete(doc.ref));
-                    await batch.commit();
-                } catch (e) {}
-            }
-            showToast("Solver history cleared across all instances", "success", 2000);
+            showToast("Solver history cleared in Firebase", "success", 2000);
         }
 
         async function deleteHistoryEntry(id) {
             solverHistory = solverHistory.filter(h => h.id !== id);
-            try {
-                localStorage.setItem('solver_history_cache', JSON.stringify(solverHistory.slice(0, 100)));
-            } catch (e) {}
             renderSolverHistory();
+
+            // Save updated list in Firebase Firestore
+            if (db) {
+                try {
+                    await db.collection('config').doc('appSettings').set({
+                        solverHistory: solverHistory.slice(0, 250)
+                    }, { merge: true });
+                } catch (e) {
+                    console.warn("Could not delete solver history entry in Firebase:", e);
+                }
+            }
 
             // Sync updated list to server
             try {
@@ -2445,21 +2425,6 @@
                     });
                 }
             } catch (e) {}
-
-            // Sync updated list to Firestore
-            if (db) {
-                try {
-                    await db.collection('config').doc('appSettings').set({
-                        solverHistory: solverHistory.slice(0, 200)
-                    }, { merge: true });
-                } catch (e) {}
-
-                if (id && !id.startsWith('hist_')) {
-                    try {
-                        await db.collection('solver_history').doc(id).delete();
-                    } catch (e) {}
-                }
-            }
         }
 
         function getFirestoreInstance(appInstance, databaseId) {
@@ -2638,7 +2603,8 @@
                             updateDebugPanelVisibility();
                         }
                         if (Array.isArray(data.solverHistory)) {
-                            mergeSolverHistory(data.solverHistory);
+                            solverHistory = data.solverHistory;
+                            renderSolverHistory();
                         }
                     }
                 });
@@ -2673,27 +2639,7 @@
                 });
                 activeDbListeners.push(unsubIgnored);
 
-                // Listen to shared solver history records in Firebase
-                const unsubHistory = db.collection('solver_history').orderBy('timestamp', 'desc').limit(150).onSnapshot(snapshot => {
-                    const items = [];
-                    snapshot.forEach(doc => {
-                        const d = doc.data();
-                        items.push({
-                            id: doc.id,
-                            user: d.user || 'Unknown',
-                            result: d.result || '---',
-                            timestamp: d.timestamp || Date.now()
-                        });
-                    });
-                    solverHistory = items;
-                    try {
-                        localStorage.setItem('solver_history_cache', JSON.stringify(items.slice(0, 50)));
-                    } catch (e) {}
-                    renderSolverHistory();
-                }, err => {
-                    console.warn("Solver history snapshot notice:", err?.message || err);
-                });
-                activeDbListeners.push(unsubHistory);
+                // Ignored duplicates listener already attached above
 
             } catch (e) {
                 console.error("Firebase init error:", e);
