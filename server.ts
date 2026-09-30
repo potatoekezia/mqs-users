@@ -121,10 +121,13 @@ async function startServer() {
   function pruneHistory(list: any[]) {
     if (!Array.isArray(list)) return [];
     const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
-    return list
+    const filtered = list
       .filter(item => item && (item.timestamp || 0) >= oneDayAgo)
-      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-      .slice(0, 50);
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    if (filtered.length >= 50) {
+      return [];
+    }
+    return filtered;
   }
 
   try {
