@@ -998,6 +998,49 @@
             </div>
         </div>
 
+        <!-- Simple Analytics & Reset Timer Section -->
+        <div class="card" style="margin-bottom:12px; padding:12px 14px; background:#1e1e1e; border:1px solid rgba(255,255,255,0.08);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <span style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--accent); display:flex; align-items:center; gap:6px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    History Analytics
+                </span>
+                <span id="history-reset-badge" style="font-size:11px; color:#38bdf8; font-family:monospace; background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.25); border-radius:4px; padding:2px 7px;">
+                    ⏳ Reset: Inactive
+                </span>
+            </div>
+
+            <!-- Reset Countdown Banner -->
+            <div style="background:#141416; border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:8px 12px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+                <div style="display:flex; align-items:center; gap:7px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 10"/></svg>
+                    <span style="font-size:12px; color:var(--text-secondary);">History Reset Timer:</span>
+                    <strong id="history-reset-countdown" style="font-size:12px; color:#fff; font-family:monospace; letter-spacing:0.5px;">No active timer (24h retention)</strong>
+                </div>
+                <span id="history-retention-info" style="font-size:11px; color:var(--text-secondary);">24h rolling reset • Auto-clears at 50</span>
+            </div>
+
+            <!-- Simple Analytics Stat Grid -->
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(100px, 1fr)); gap:8px;">
+                <div style="background:#141416; border:1px solid rgba(255,255,255,0.05); border-radius:6px; padding:8px 10px; text-align:center;">
+                    <div style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:600">Total Solves</div>
+                    <div id="analytics-total-solves" style="font-size:15px; font-weight:800; color:#fff; margin-top:2px; font-family:monospace;">0 / 50</div>
+                </div>
+                <div style="background:#141416; border:1px solid rgba(255,255,255,0.05); border-radius:6px; padding:8px 10px; text-align:center;">
+                    <div style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:600">Avg Time</div>
+                    <div id="analytics-avg-time" style="font-size:15px; font-weight:800; color:#38bdf8; margin-top:2px; font-family:monospace;">—</div>
+                </div>
+                <div style="background:#141416; border:1px solid rgba(255,255,255,0.05); border-radius:6px; padding:8px 10px; text-align:center;">
+                    <div style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:600">Fastest</div>
+                    <div id="analytics-fastest-time" style="font-size:15px; font-weight:800; color:var(--success); margin-top:2px; font-family:monospace;">—</div>
+                </div>
+                <div style="background:#141416; border:1px solid rgba(255,255,255,0.05); border-radius:6px; padding:8px 10px; text-align:center;">
+                    <div style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:600">Top User</div>
+                    <div id="analytics-top-user" style="font-size:13px; font-weight:700; color:var(--accent); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="Top User">—</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Filter and Sort Controls -->
         <div class="card" style="margin-bottom:12px; padding:12px; background:#1e1e1e; display:flex; flex-direction:column; gap:10px;">
             <div>
@@ -1633,6 +1676,7 @@
                 solverHistory = [];
             }
             renderSolverHistory();
+            startHistoryResetTicker();
             updateSolverUserNameDisplay();
             // Sync history across instances on startup
             if (solverHistory.length > 0) {
@@ -2173,6 +2217,7 @@
                 else if (tab === 'history') {
                     renderSolverHistory();
                     fetchSharedHistoryFromServer();
+                    startHistoryResetTicker();
                 }
                 resetSolverAutoRevertTimer();
             }
@@ -2721,9 +2766,134 @@
             if (modal) modal.style.display = 'none';
         }
 
+        function updateHistoryAnalytics() {
+            const totalSolvesEl = document.getElementById('analytics-total-solves');
+            const avgTimeEl = document.getElementById('analytics-avg-time');
+            const fastestTimeEl = document.getElementById('analytics-fastest-time');
+            const topUserEl = document.getElementById('analytics-top-user');
+
+            if (!totalSolvesEl) return;
+
+            const total = Array.isArray(solverHistory) ? solverHistory.length : 0;
+            totalSolvesEl.innerText = `${total} / 50`;
+
+            const durations = [];
+            const userCounts = {};
+
+            if (Array.isArray(solverHistory)) {
+                solverHistory.forEach(item => {
+                    if (item) {
+                        const dur = Number(item.duration);
+                        if (!isNaN(dur) && dur > 0) {
+                            durations.push(dur);
+                        }
+                        const u = (item.user || 'Anonymous').trim() || 'Anonymous';
+                        userCounts[u] = (userCounts[u] || 0) + 1;
+                    }
+                });
+            }
+
+            if (durations.length > 0) {
+                const sum = durations.reduce((acc, v) => acc + v, 0);
+                const avg = sum / durations.length;
+                const fastest = Math.min(...durations);
+
+                if (avgTimeEl) avgTimeEl.innerText = formatDuration(avg);
+                if (fastestTimeEl) fastestTimeEl.innerText = formatDuration(fastest);
+            } else {
+                if (avgTimeEl) avgTimeEl.innerText = '—';
+                if (fastestTimeEl) fastestTimeEl.innerText = '—';
+            }
+
+            let topUser = '—';
+            let maxCount = 0;
+            for (const [u, cnt] of Object.entries(userCounts)) {
+                if (cnt > maxCount) {
+                    maxCount = cnt;
+                    topUser = `${u} (${cnt})`;
+                }
+            }
+            if (topUserEl) {
+                topUserEl.innerText = topUser;
+                topUserEl.title = topUser !== '—' ? `Most active user: ${topUser}` : 'No solves recorded yet';
+            }
+        }
+
+        let historyResetTicker = null;
+
+        function updateHistoryResetTimer() {
+            const badgeEl = document.getElementById('history-reset-badge');
+            const countdownEl = document.getElementById('history-reset-countdown');
+            const infoEl = document.getElementById('history-retention-info');
+
+            if (!countdownEl) return;
+
+            if (!Array.isArray(solverHistory) || solverHistory.length === 0) {
+                if (badgeEl) badgeEl.innerText = '⏳ Reset: Inactive';
+                countdownEl.innerText = 'No active timer (24h retention)';
+                if (infoEl) infoEl.innerText = '24h rolling reset • Auto-clears at 50';
+                return;
+            }
+
+            if (solverHistory.length >= 50) {
+                if (badgeEl) badgeEl.innerText = '⚠️ Auto-Reset Pending';
+                countdownEl.innerText = 'Capacity reached (50/50)! Clears on next solve';
+                if (infoEl) infoEl.innerText = 'Max 50 limit reached • Next solve will clear history';
+                return;
+            }
+
+            let oldestTimestamp = null;
+            solverHistory.forEach(item => {
+                if (item && item.timestamp) {
+                    if (oldestTimestamp === null || item.timestamp < oldestTimestamp) {
+                        oldestTimestamp = item.timestamp;
+                    }
+                }
+            });
+
+            if (!oldestTimestamp) {
+                if (badgeEl) badgeEl.innerText = '⏳ Reset: Inactive';
+                countdownEl.innerText = 'No active timer';
+                return;
+            }
+
+            const expiryTime = oldestTimestamp + (24 * 60 * 60 * 1000);
+            const msRemaining = expiryTime - Date.now();
+
+            if (msRemaining <= 0) {
+                if (badgeEl) badgeEl.innerText = '⏳ Pruning now...';
+                countdownEl.innerText = 'Oldest log expired • Pruning now...';
+                solverHistory = pruneSolverHistory(solverHistory);
+                renderSolverHistory();
+                saveHistoryToCloud(solverHistory);
+                return;
+            }
+
+            const hours = Math.floor(msRemaining / (3600 * 1000));
+            const minutes = Math.floor((msRemaining % (3600 * 1000)) / (60 * 1000));
+            const seconds = Math.floor((msRemaining % (60 * 1000)) / 1000);
+
+            const timeStr = `${hours}h ${minutes < 10 ? '0' : ''}${minutes}m ${seconds < 10 ? '0' : ''}${seconds}s`;
+
+            if (badgeEl) badgeEl.innerText = `⏳ Reset: ${timeStr}`;
+            countdownEl.innerText = `${timeStr} (Oldest log)`;
+            if (infoEl) infoEl.innerText = `Oldest record auto-clears in ${timeStr} • Max 50`;
+        }
+
+        function startHistoryResetTicker() {
+            if (historyResetTicker) return;
+            historyResetTicker = setInterval(() => {
+                if (activeTab === 'history') {
+                    updateHistoryResetTimer();
+                }
+            }, 1000);
+        }
+
         function renderSolverHistory() {
             updateSolverUserNameDisplay();
             updateHistoryUserFilterOptions();
+            updateHistoryAnalytics();
+            updateHistoryResetTimer();
             applyHistoryFiltersAndSort();
         }
 
