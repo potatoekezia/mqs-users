@@ -1124,6 +1124,21 @@
                 <p style="font-size:11px; color:var(--text-secondary); margin-top:4px">After a quiz is analyzed, automatically clears and resets the solver after this delay (e.g. 5 minutes) so the next quiz can be taken in without manually clicking Refresh. (0 to disable)</p>
             </div>
 
+            <div style="margin-top:16px; margin-bottom:16px">
+                <label style="display:block; margin-bottom:6px; font-weight:500; font-size:13px">Auto Revert to Solver Tab:</label>
+                <div style="display:flex; align-items:center; gap:8px">
+                    <input type="number" id="settings-auto-revert-time" min="0" max="1800" step="any" placeholder="e.g. 5 (min 5, or 0 to disable)" style="margin-bottom:0; flex:1">
+                    <select id="settings-auto-revert-unit" style="margin-bottom:0; width:auto; padding:8px 12px; background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:6px; font-size:13px">
+                        <option value="minutes">Minutes</option>
+                        <option value="seconds">Seconds</option>
+                    </select>
+                </div>
+                <div id="auto-revert-warning" style="display:none; font-size:11px; color:#f87171; margin-top:4px; font-weight:500;">
+                    ⚠️ Values under 5 are blocked to avoid soft-locking. Use 0 to disable or 5 or higher.
+                </div>
+                <p style="font-size:11px; color:var(--text-secondary); margin-top:4px">Automatically switches back to the Solver tab when idle on other tabs (History, Dict, Settings). Minimum allowed is 5 to prevent soft locking (use 0 to disable).</p>
+            </div>
+
             <label style="display:flex; align-items:center; gap:10px">
                 <input type="checkbox" id="debug-mode-toggle" style="width:20px; height:20px">
                 Enable Debug Panel
@@ -1674,6 +1689,61 @@
             if (autoRefreshInput) autoRefreshInput.oninput = handleAutoRefreshChange;
             if (autoRefreshUnit) autoRefreshUnit.onchange = handleAutoRefreshChange;
 
+            const autoRevertInput = document.getElementById('settings-auto-revert-time');
+            const autoRevertUnit = document.getElementById('settings-auto-revert-unit');
+
+            function handleAutoRevertChange(isFinal = false) {
+                const valInput = document.getElementById('settings-auto-revert-time');
+                const unitSelect = document.getElementById('settings-auto-revert-unit');
+                const warnEl = document.getElementById('auto-revert-warning');
+                let rawVal = parseFloat(valInput ? valInput.value : 0);
+                if (isNaN(rawVal) || rawVal < 0) rawVal = 0;
+                const unit = unitSelect ? unitSelect.value : 'minutes';
+
+                if (rawVal > 0 && rawVal < 5) {
+                    if (warnEl) warnEl.style.display = 'block';
+                    if (isFinal) {
+                        rawVal = 5;
+                        if (valInput) valInput.value = 5;
+                        if (warnEl) warnEl.style.display = 'none';
+                        showToast("Values under 5 are not allowed to prevent soft locking (0 to disable). Clamped to 5.", "warning", 2500);
+                    } else {
+                        // While typing single digits, keep timer inactive to prevent immediate soft-lock
+                        solverAutoRevertSeconds = 0;
+                        clearSolverAutoRevertTimer();
+                        return;
+                    }
+                } else {
+                    if (warnEl) warnEl.style.display = 'none';
+                }
+
+                const val = rawVal;
+                solverAutoRevertSeconds = (val >= 5) ? (unit === 'minutes' ? Math.round(val * 60) : Math.round(val)) : 0;
+                localStorage.setItem('solver-auto-revert-val', val);
+                localStorage.setItem('solver-auto-revert-unit', unit);
+                localStorage.setItem('solver-auto-revert-seconds', solverAutoRevertSeconds);
+                if (activeTab !== 'solver') {
+                    resetSolverAutoRevertTimer();
+                } else {
+                    clearSolverAutoRevertTimer();
+                }
+                if (isFinal) {
+                    syncSettingsToFirebase();
+                }
+            }
+
+            if (autoRevertInput) {
+                autoRevertInput.oninput = () => handleAutoRevertChange(false);
+                autoRevertInput.onchange = () => handleAutoRevertChange(true);
+                autoRevertInput.onblur = () => handleAutoRevertChange(true);
+            }
+            if (autoRevertUnit) {
+                autoRevertUnit.onchange = () => handleAutoRevertChange(true);
+            }
+
+            window.addEventListener('pointerdown', handleAutoRevertUserActivity, { passive: true });
+            window.addEventListener('keydown', handleAutoRevertUserActivity, { passive: true });
+
             document.getElementById('screenshot-input').onchange = handleScreenshot;
             document.getElementById('solve-btn').onclick = runPipeline;
 
@@ -1764,6 +1834,35 @@
             if (matchSource) matchSource.innerText = "Waiting...";
             const detectedCropsEl = document.getElementById('detected-crops');
             if (detectedCropsEl) detectedCropsEl.innerHTML = "";
+        }
+
+        let solverAutoRevertSeconds = 0;
+        let solverAutoRevertTimer = null;
+
+        function clearSolverAutoRevertTimer() {
+            if (solverAutoRevertTimer) {
+                clearTimeout(solverAutoRevertTimer);
+                solverAutoRevertTimer = null;
+            }
+        }
+
+        function resetSolverAutoRevertTimer() {
+            clearSolverAutoRevertTimer();
+            if (activeTab === 'solver' || !solverAutoRevertSeconds || solverAutoRevertSeconds < 5) {
+                return;
+            }
+            solverAutoRevertTimer = setTimeout(() => {
+                if (activeTab !== 'solver') {
+                    switchTab('solver');
+                    showToast("Reverted back to Solver tab", "info", 2000);
+                }
+            }, solverAutoRevertSeconds * 1000);
+        }
+
+        function handleAutoRevertUserActivity() {
+            if (activeTab !== 'solver' && solverAutoRevertSeconds > 0) {
+                resetSolverAutoRevertTimer();
+            }
         }
 
         function compressImage(dataUrl, maxDim = 80, quality = 0.8) {
@@ -1955,6 +2054,9 @@
                     autoRefreshVal: parseFloat(localStorage.getItem('solver-auto-refresh-val') || 0),
                     autoRefreshUnit: localStorage.getItem('solver-auto-refresh-unit') || 'minutes',
                     autoRefreshSeconds: solverAutoRefreshSeconds,
+                    autoRevertVal: parseFloat(localStorage.getItem('solver-auto-revert-val') || 0),
+                    autoRevertUnit: localStorage.getItem('solver-auto-revert-unit') || 'minutes',
+                    autoRevertSeconds: solverAutoRevertSeconds,
                     updatedAt: Date.now()
                 };
                 await db.collection('config').doc('appSettings').set(settings);
@@ -1983,6 +2085,21 @@
             const parsedVal = Math.max(0, parseFloat(valInput ? valInput.value : 0) || 0);
             solverAutoRefreshSeconds = savedUnit === 'minutes' ? Math.round(parsedVal * 60) : Math.round(parsedVal);
             localStorage.setItem('solver-auto-refresh-seconds', solverAutoRefreshSeconds);
+
+            const savedRevertVal = localStorage.getItem('solver-auto-revert-val');
+            const savedRevertUnit = localStorage.getItem('solver-auto-revert-unit') || 'minutes';
+            const revertValInput = document.getElementById('settings-auto-revert-time');
+            const revertUnitSelect = document.getElementById('settings-auto-revert-unit');
+            if (revertValInput) revertValInput.value = (savedRevertVal !== null && savedRevertVal !== '') ? savedRevertVal : (localStorage.getItem('solver-auto-revert-seconds') ? (parseInt(localStorage.getItem('solver-auto-revert-seconds')) / (savedRevertUnit === 'minutes' ? 60 : 1)) : '0');
+            if (revertUnitSelect) revertUnitSelect.value = savedRevertUnit;
+            let parsedRevertVal = Math.max(0, parseFloat(revertValInput ? revertValInput.value : 0) || 0);
+            if (parsedRevertVal > 0 && parsedRevertVal < 5) {
+                parsedRevertVal = 5;
+                if (revertValInput) revertValInput.value = 5;
+            }
+            solverAutoRevertSeconds = (parsedRevertVal >= 5) ? (savedRevertUnit === 'minutes' ? Math.round(parsedRevertVal * 60) : Math.round(parsedRevertVal)) : 0;
+            localStorage.setItem('solver-auto-revert-val', parsedRevertVal);
+            localStorage.setItem('solver-auto-revert-seconds', solverAutoRevertSeconds);
 
             document.getElementById('fb-apiKey').value = localStorage.getItem('fb-apiKey') || '';
             document.getElementById('fb-authDomain').value = localStorage.getItem('fb-authDomain') || '';
@@ -2048,11 +2165,16 @@
             if (targetEl) targetEl.classList.add('active');
             document.querySelectorAll(`.nav-item[onclick*="'${tab}'"]`).forEach(el => el.classList.add('active'));
             activeTab = tab;
-            if (tab === 'solver') renderPreviewCircles();
-            else if (tab === 'dictionary') renderDictPreview();
-            else if (tab === 'history') {
-                renderSolverHistory();
-                fetchSharedHistoryFromServer();
+            if (tab === 'solver') {
+                renderPreviewCircles();
+                clearSolverAutoRevertTimer();
+            } else {
+                if (tab === 'dictionary') renderDictPreview();
+                else if (tab === 'history') {
+                    renderSolverHistory();
+                    fetchSharedHistoryFromServer();
+                }
+                resetSolverAutoRevertTimer();
             }
         }
 
@@ -2897,6 +3019,23 @@
                             localStorage.setItem('solver-auto-refresh-val', val);
                             localStorage.setItem('solver-auto-refresh-unit', unit);
                             localStorage.setItem('solver-auto-refresh-seconds', solverAutoRefreshSeconds);
+                        }
+                        if (data.autoRevertSeconds !== undefined || data.autoRevertVal !== undefined) {
+                            const unit = data.autoRevertUnit || (data.autoRevertVal !== undefined ? 'minutes' : 'seconds');
+                            let val = data.autoRevertVal !== undefined ? data.autoRevertVal : (unit === 'minutes' ? (data.autoRevertSeconds / 60) : data.autoRevertSeconds);
+                            val = Math.max(0, parseFloat(val) || 0);
+                            if (val > 0 && val < 5) val = 5;
+                            const valInput = document.getElementById('settings-auto-revert-time');
+                            const unitSelect = document.getElementById('settings-auto-revert-unit');
+                            if (valInput) valInput.value = val;
+                            if (unitSelect) unitSelect.value = unit;
+                            solverAutoRevertSeconds = (val >= 5) ? (unit === 'minutes' ? Math.round(val * 60) : Math.round(val)) : 0;
+                            localStorage.setItem('solver-auto-revert-val', val);
+                            localStorage.setItem('solver-auto-revert-unit', unit);
+                            localStorage.setItem('solver-auto-revert-seconds', solverAutoRevertSeconds);
+                            if (activeTab !== 'solver') {
+                                resetSolverAutoRevertTimer();
+                            }
                         }
                         if (data.debugPanelEnabled !== undefined) {
                             document.getElementById('debug-mode-toggle').checked = data.debugPanelEnabled;
